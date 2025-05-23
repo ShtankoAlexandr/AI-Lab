@@ -4,6 +4,9 @@ import time
 from datetime import datetime
 import mysql.connector
 import re
+import pandas as pd
+import os
+from dotenv import load_dotenv
 
 headers = {
     "User-Agent": "Mozilla/5.0 (Linux; Android 6.0; Nexus 5 Build/MRA58N) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Mobile Safari/537.36",
@@ -165,12 +168,12 @@ def main():
 
     if all_data:
         try:
+            load_dotenv()
             conn = mysql.connector.connect(
-                host='localhost',
-                port=3306,
-                user='root',
-                password='Shtankosasha4',
-                database='nlp_scrapper'
+            host=os.getenv('DB_HOST'),
+            user=os.getenv('DB_USER'),
+            password=os.getenv('DB_PASSWORD'),
+            database=os.getenv('DB_NAME')
             )
             insert_query = """
             INSERT INTO articles (URL, dateOfPubl, headline, body)
