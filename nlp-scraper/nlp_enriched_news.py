@@ -11,6 +11,10 @@ from sklearn.feature_extraction.text import CountVectorizer
 from dotenv import load_dotenv
 import spacy
 from collections import Counter
+import joblib
+
+# Download pretrain model 
+model = joblib.load("results/topic_classifier.pkl")
 
 # Download necessary NLTK  and spacy resources
 nltk.download('punkt')
@@ -92,6 +96,11 @@ if __name__ == "__main__":
 
     # Perform sentiment analysis on raw text
     df["Sentiment"] = df["combined_text"].apply(analyze_sentiment)
+
+    predicted_labels = model.predict(df["preprocessed_text"])
+
+    # Add Topics in ours dataset
+    df["Topics"] = predicted_labels
     
 
     # Bag-of-Words model for keyword frequency
