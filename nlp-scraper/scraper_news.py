@@ -4,58 +4,54 @@ import time
 from datetime import datetime
 import mysql.connector
 import re
-import pandas as pd
 import os
 from dotenv import load_dotenv
 
-headers = {
+# Заголовки для имитации браузера
+HEADERS = {
     "User-Agent": "Mozilla/5.0 (Linux; Android 6.0; Nexus 5 Build/MRA58N) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Mobile Safari/537.36",
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
 }
 
-base_url = 'https://www.bbc.co.uk'
-section_url = 'https://www.bbc.co.uk/news/world'
+BASE_URL = 'https://www.bbc.co.uk'
+SECTION_URL = 'https://www.bbc.co.uk/news/world'
 
-# Глобальный счётчик ID
-global_id_counter = 0
-
-def parse_article(article_url):
-    """Получаем тело статьи (текст) и дату публикации по URL."""
+def parse_article(url):
+    """Извлекает текст статьи и дату публикации,
+    используя только параграфы с классом 'ssrcss-1q0x1qg-Paragraph',
+    исключая нежелательные фразы."""
     try:
-        response = requests.get(article_url, headers=headers)
-        if response.status_code != 200:
-            print(f"Не удалось получить статью {article_url}")
+        r = requests.get(url, headers=HEADERS)
+        if r.status_code != 200:
             return None, None
-        soup = BeautifulSoup(response.text, 'html.parser')
+        soup = BeautifulSoup(r.text, 'html.parser')
+        
+        # Извлечение только параграфов с указанным классом
+        news_paragraphs = soup.select('p.ssrcss-1q0x1qg-Paragraph')
+        
+        def is_extraneous(text):
+            extraneous_phrases = [
+                "Follow the twists and turns",  # информация о бюллетене
+                "This video can not be played",  # сообщение, что видео не воспроизводится
+                "Copyright",
+                "The BBC is not responsible",
+                "Read about our approach"
+            ]
+            # Если абзац начинается с "Watch:" — считаем его лишним
+            if text.strip().startswith("Watch:"):
+                return True
+            for phrase in extraneous_phrases:
+                if phrase in text:
+                    return True
+            return False
+        
+        filtered_paragraphs = [p.get_text() for p in news_paragraphs if not is_extraneous(p.get_text())]
+        text = "\n".join(filtered_paragraphs).strip()
+        if text == "":
+            text = None
 
-        body = None
-
-        # 1. Попытка получить тело статьи через основной селектор BBC
-        paragraphs = soup.select('div.ssrcss-uf6wea-RichTextComponentWrapper p')
-        if paragraphs:
-            body = '\n'.join(p.get_text() for p in paragraphs).strip()
-
-        # 2. Если не нашли, пытаемся из <article>
-        if not body:
-            article_tag = soup.find('article')
-            if article_tag:
-                ps = article_tag.find_all('p')
-                if ps:
-                    body = '\n'.join(p.get_text() for p in ps).strip()
-
-        # 3. Если всё ещё нет текста — собираем все параграфы страницы
-        if not body:
-            ps = soup.find_all('p')
-            if ps:
-                body = '\n'.join(p.get_text() for p in ps).strip()
-
-        if body == '':
-            body = None
-
-        # Поиск даты публикации
+        # Извлечение даты публикации
         pub_date = None
-
-        # Из тега <time datetime="...">
         time_tag = soup.find('time')
         if time_tag and time_tag.has_attr('datetime'):
             try:
@@ -63,134 +59,91 @@ def parse_article(article_url):
             except Exception:
                 pub_date = None
 
-        # Из meta article:published_time
-        if not pub_date:
-            meta_time = soup.find('meta', attrs={'property': 'article:published_time'})
-            if meta_time and meta_time.has_attr('content'):
-                try:
-                    pub_date = datetime.fromisoformat(meta_time['content'].replace('Z', '+00:00'))
-                except Exception:
-                    pub_date = None
-
-        return body, pub_date
-
+        return text, pub_date
     except Exception as e:
-        print(f"Ошибка при парсинге статьи: {e}")
+        print("Ошибка при парсинге статьи:", e)
         return None, None
 
-
 def get_articles_urls(page_num):
-    global global_id_counter
-
-    url = f"{section_url}?page={page_num}"
-    print(f"\nПарсинг страницы {page_num} — {url}")
-
+    """Парсит страницу с новостями и возвращает информацию об актуальных статьях."""
+    url = f"{SECTION_URL}?page={page_num}"
+    print(f"Парсинг страницы {page_num}: {url}")
+    articles = []
     try:
-        session = requests.Session()
-        response = session.get(url=url, headers=headers)
-
-        if response.status_code != 200:
-            print(f"Страница {page_num} не найдена. Стоп.")
+        r = requests.get(url, headers=HEADERS)
+        if r.status_code != 200:
             return []
-
-        soup = BeautifulSoup(response.text, 'html.parser')
-
+        soup = BeautifulSoup(r.text, 'html.parser')
         promo_links = soup.select('a.ssrcss-5wtq5v-PromoLink, a.ssrcss-9haqql-LinkPostLink')
-        if not promo_links:
-            print(f"Нет новостей на странице {page_num}. Стоп.")
-            return []
-
-        art_data = []
-        for a in promo_links:
+        
+        for idx, a in enumerate(promo_links, start=1):
             href = a.get('href')
             if href and '/news/articles/' in href:
-                full_url = base_url + href if href.startswith('/') else href
-                article_id = href.split('/')[-1]
-                global_id_counter += 1
+                full_url = BASE_URL + href if href.startswith('/') else href
 
-                headline_tag = a.find('h3') or a.find('p') or a
-                headline = headline_tag.get_text(strip=True) if headline_tag else "No headline"
-
-                # Попытка найти дату в анонсе
-                pub_date = None
-                time_tag = a.find_next('time', {'data-testid': 'timestamp'})
-                if time_tag and time_tag.has_attr('datetime'):
-                    try:
-                        pub_date = datetime.fromisoformat(time_tag['datetime'].replace('Z', '+00:00'))
-                    except Exception:
-                        pub_date = None
+                # Вывод логов для этого URL:
+                print(f"{idx}. scraping {full_url}")
+                print("    requesting ...")
+                # Получаем данные из статьи – тут происходит запрос:
+                article_body, article_date = parse_article(full_url)
+                print("    parsing ...")
+                
+                # Извлечение заголовка через <span role="text">
+                headline_tag = a.find('span', {'role': 'text'})
+                if headline_tag:
+                    headline = headline_tag.get_text(strip=True)
                 else:
-                    date_span = a.find_next('span', class_='visually-hidden')
-                    if date_span:
-                        date_text = date_span.get_text(strip=True)
-                        match = re.search(r'(\d{1,2}:\d{2})\s(\d{1,2}\s\w+)', date_text)
-                        if match:
-                            try:
-                                date_str = f"{match.group(1)} {match.group(2)}"
-                                pub_date = datetime.strptime(date_str, "%H:%M %d %B")
-                                pub_date = pub_date.replace(year=datetime.now().year)
-                            except Exception:
-                                pub_date = None
-
-                # Если даты нет — получить из статьи
-                body, pub_date_article = parse_article(full_url)
-                if pub_date is None:
-                    pub_date = pub_date_article
-
-                print(f"ID{global_id_counter}: {article_id}")
-                print(f"URL: {full_url}")
-                print(f"Headline: {headline}")
-                print(f"Published date (approx): {pub_date}")
-                print(f"Body preview: {body[:200] if body else 'None'}...\n")
-
-                art_data.append((full_url, pub_date, headline, body))
-
-        return art_data
-
+                    headline = a.get_text(strip=True)
+                # Удаляем префикс "Watch:" и лишний текст с "published at"
+                if headline.startswith("Watch:"):
+                    headline = headline.replace("Watch:", "").strip()
+                if "published at" in headline:
+                    headline = headline.split("published at")[0].strip()
+                
+                # Генерируем путь, куда "сохранился" URL — используем последний сегмент как идентификатор
+                article_id = href.split('/')[-1]
+                saved_path = f"/articles/{article_id}.html"
+                print(f"    saved in {saved_path}")
+                
+                articles.append((full_url, article_date, headline, article_body))
+        return articles
     except Exception as e:
-        print(f"Ошибка при получении данных: {e}")
+        print("Ошибка при получении URL:", e)
         return []
 
-
 def main():
-    page = 1
-    all_data = []
-
-    while True:
-        articles = get_articles_urls(page)
-        if not articles:
+    load_dotenv()
+    all_articles = []
+    # Обрабатываем страницы с 1 по 50
+    for page in range(1, 50):
+        arts = get_articles_urls(page)
+        if not arts:
             break
-        all_data.extend(articles)
-        time.sleep(2)  # задержка между запросами
-        page += 1
-        if page > 16:  # ограничение по количеству страниц
-            break
-
-    if all_data:
+        all_articles.extend(arts)
+        time.sleep(2)
+    if all_articles:
         try:
-            load_dotenv()
             conn = mysql.connector.connect(
-            host=os.getenv('DB_HOST'),
-            user=os.getenv('DB_USER'),
-            password=os.getenv('DB_PASSWORD'),
-            database=os.getenv('DB_NAME')
+                host=os.getenv('DB_HOST'),
+                user=os.getenv('DB_USER'),
+                password=os.getenv('DB_PASSWORD'),
+                database=os.getenv('DB_NAME')
             )
-            insert_query = """
-            INSERT INTO articles (URL, dateOfPubl, headline, body)
+            query = """
+            INSERT INTO articles (URL, Date_scraped, Headline, Body)
             VALUES (%s, %s, %s, %s)
-            ON DUPLICATE KEY UPDATE headline = VALUES(headline), body = VALUES(body);
+            ON DUPLICATE KEY UPDATE headline = VALUES(Headline), body = VALUES(Body);
             """
             cursor = conn.cursor()
-            cursor.executemany(insert_query, all_data)
+            cursor.executemany(query, all_articles)
             conn.commit()
-            print(f"\n✅ Уникальные статьи добавлены или обновлены: {len(all_data)} записей.")
+            print(f"✅ Обновлено {len(all_articles)} записей.")
             cursor.close()
             conn.close()
         except mysql.connector.Error as db_err:
-            print(f"Ошибка при работе с базой данных: {db_err}")
+            print("Ошибка БД:", db_err)
     else:
-        print("⚠️ Нет новых данных для добавления.")
-
+        print("Нет новых данных для добавления.")
 
 if __name__ == '__main__':
     main()
