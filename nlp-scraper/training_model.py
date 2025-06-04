@@ -9,7 +9,7 @@ import pickle
 from sklearn.metrics import classification_report, accuracy_score
 import logging
 import time
-from text_utils import preprocess  # Общая функция предобработки
+from text_utils import preprocess  
 import os
 
 # --- Setup logging ---
@@ -31,10 +31,18 @@ y_train = df_train['Category']
 X_test = df_test['Text'].apply(preprocess)
 y_test = df_test['Category']
 
-# --- Define pipeline: TF-IDF + Naive Bayes ---
+# --- Define pipeline: TF-IDF 
 pipeline = Pipeline([
     ("tfidf", TfidfVectorizer(max_features=10000, ngram_range=(1, 2))),
-    ("clf", LinearSVC(C=0.1, class_weight='balanced'))
+    ("clf", LinearSVC(
+    C=0.01,  # Decrease C for stronger regularization (was 0.1)
+    class_weight='balanced',
+    penalty='l2',  # Explicit L2 regularization
+    max_iter=2000  # Ensure convergence
+)
+     
+     
+     )
 ])
 
 # --- Train the classifier ---
@@ -70,7 +78,7 @@ logging.info("Label mapping saved.")
 logging.info("Generating learning curves...")
 train_sizes, train_scores, val_scores = learning_curve(
     pipeline, X_train, y_train, cv=5, scoring='accuracy',
-    train_sizes=np.linspace(0.1, 1.0, 5),  # Уменьшено количество точек для скорости
+    train_sizes=np.linspace(0.1, 1.0, 5),  
     n_jobs=-1
 )
 

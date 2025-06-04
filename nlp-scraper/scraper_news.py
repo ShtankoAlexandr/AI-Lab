@@ -8,7 +8,7 @@ import pandas as pd
 from dotenv import load_dotenv
 from sqlalchemy import create_engine, text
 
-# Заголовки для имитации браузера
+# Headers for simulating a browser
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Linux; Android 6.0; Nexus 5 Build/MRA58N) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Mobile Safari/537.36",
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
@@ -56,29 +56,29 @@ def parse_article(url):
 
         return text, pub_date
     except Exception as e:
-        print("Ошибка при парсинге статьи:", e)
+        print("Error parsing article:", e)
         return None, None
 
 def get_articles_urls(page_num):
     url = f"{SECTION_URL}?page={page_num}"
-    print(f"Парсинг страницы {page_num}: {url}")
+    print(f"Parsing page {page_num}: {url}")
     articles = []
     try:
         r = requests.get(url, headers=HEADERS)
         if r.status_code != 200:
             return []
         soup = BeautifulSoup(r.text, 'html.parser')
-        promo_links = soup.select('a.ssrcss-5wtq5v-PromoLink, a.ssrcss-9haqql-LinkPostLink', )
-        
+        promo_links = soup.select('a.ssrcss-5wtq5v-PromoLink, a.ssrcss-9haqql-LinkPostLink')
+
         for idx, a in enumerate(promo_links, start=1):
             href = a.get('href')
             if href and '/news/articles/' in href:
                 full_url = BASE_URL + href if href.startswith('/') else href
-                print(f"{idx}. scraping {full_url}")
-                print("    requesting ...")
+                print(f"{idx}. Scraping {full_url}")
+                print("    Requesting ...")
                 article_body, article_date = parse_article(full_url)
-                print("    parsing ...")
-                
+                print("    Parsing ...")
+
                 headline_tag = a.find('span', {'role': 'text'})
                 if headline_tag:
                     headline = headline_tag.get_text(strip=True)
@@ -88,15 +88,15 @@ def get_articles_urls(page_num):
                     headline = headline.replace("Watch:", "").strip()
                 if "published at" in headline:
                     headline = headline.split("published at")[0].strip()
-                
+
                 article_id = href.split('/')[-1]
                 saved_path = f"/articles/{article_id}.html"
-                print(f"    saved in {saved_path}")
-                
+                print(f"    Saved in {saved_path}")
+
                 articles.append((full_url, article_date, headline, article_body))
         return articles
     except Exception as e:
-        print("Ошибка при получении URL:", e)
+        print("Error retrieving URLs:", e)
         return []
 
 def main():
@@ -117,12 +117,12 @@ def main():
             db_host = os.getenv('DB_HOST')
             db_name = os.getenv('DB_NAME')
 
-            # Создание подключения через SQLAlchemy
+            # Creating connection via SQLAlchemy
             engine = create_engine(f"mysql+pymysql://{db_user}:{db_pass}@{db_host}/{db_name}?charset=utf8mb4")
 
             df = pd.DataFrame(all_articles, columns=["URL", "Date_scraped", "Headline", "Body"])
 
-            # Вставка с upsert
+            # Upsert insertion
             with engine.begin() as conn:
                 for _, row in df.iterrows():
                     stmt = text("""
@@ -137,11 +137,11 @@ def main():
                         "body": row.Body
                     })
 
-            print(f"✅ Обновлено {len(df)} записей.")
+            print(f"✅ Updated {len(df)} records.")
         except Exception as db_err:
-            print("Ошибка при работе с БД через SQLAlchemy:", db_err)
+            print("Error working with the database via SQLAlchemy:", db_err)
     else:
-        print("Нет новых данных для добавления.")
+        print("No new data to add.")
 
 if __name__ == '__main__':
     main()

@@ -12,7 +12,7 @@ from nltk.tokenize import sent_tokenize
 from nltk.sentiment import SentimentIntensityAnalyzer
 from sentence_transformers import SentenceTransformer, util
 from sklearn.feature_extraction.text import CountVectorizer
-from text_utils import preprocess  # Ваша собственная функция предобработки
+from text_utils import preprocess  
 
 # --- Logging setup ---
 logging.basicConfig(level=logging.INFO, format='[%(asctime)s] %(levelname)s: %(message)s')
@@ -56,7 +56,6 @@ logging.info("Disaster keyword embeddings prepared.")
 
 # --- Sentiment Analyzer ---
 sia = SentimentIntensityAnalyzer()
-
 
 # ---------- FUNCTIONS ----------
 
