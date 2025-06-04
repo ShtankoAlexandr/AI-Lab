@@ -11,7 +11,7 @@ from collections import Counter
 from nltk.tokenize import sent_tokenize
 from nltk.sentiment import SentimentIntensityAnalyzer
 from sentence_transformers import SentenceTransformer, util
-from sklearn.feature_extraction.text import CountVectorizer
+from sklearn.feature_extraction.text import CountVectorizer 
 from text_utils import preprocess  
 
 # --- Logging setup ---
